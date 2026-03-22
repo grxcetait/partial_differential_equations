@@ -8,32 +8,24 @@ Created on Fri Mar 13 10:31:06 2026
 
 import numpy as np
 from matplotlib import pyplot as plt
-from matplotlib.colors import ListedColormap
 import os
+import argparse
 
 class CahnHilliard(object):
 
-    def __init__(self, a, phi, l, M, dx, dt, kappa):
+    def __init__(self, phi, l, dx, dt):
         
         # Define parameters
-        self.a = a
-        #self.n = n
         self.l = l
-        self.M = M
         self.dx = dx
         self.dt = dt
-        self.kappa = kappa
         self.phi_value = phi
         self.phi = self.init_phi()
         #self.mu = np.zeros((self.l, self.l))
         self.calculate_mu()
         
-        
     def init_phi(self):
         
-        #noise = np.random.uniform(self.phi_value - 0.1, self.phi_value + 0.1, size = (self.l, self.l))
-
-        #return np.ones((self.l, self.l)) * self.phi_value + noise
         return np.random.uniform(self.phi_value - 0.1, self.phi_value + 0.1, size = (self.l, self.l))
         
     def laplacian(self, array):
@@ -45,26 +37,46 @@ class CahnHilliard(object):
         
     def calculate_mu(self):
         
-        self.mu = - self.phi * (1 - self.phi**2) - self.laplacian(self.phi)
+        self.mu = - self.phi * (1 - self.phi**2) - self.laplacian(self.phi) / self.dx**2
             
     def calculate_phi(self):
         
         self.calculate_mu()
         
-        self.phi = self.phi + self.M * self.dt * self.laplacian(self.mu) / self.dx**2
+        self.phi = self.phi + self.dt * self.laplacian(self.mu) / self.dx**2
         
     def calculate_free_energy_density(self):
         
-        self.free_energy_density = - self.a * self.phi**2 / 2 + \
-            self.a ** self.phi**4 / 4 + self.kappa * self.laplacian(self.phi)**2 / 2
-            
+        grad_x = (np.roll(self.phi, -1, axis=0) - np.roll(self.phi, 1, axis=0)) / (2 * self.dx)
+        grad_y = (np.roll(self.phi, -1, axis=1) - np.roll(self.phi, 1, axis=1)) / (2 * self.dx)
+        grad_sq = grad_x**2 + grad_y**2
+   
+        return - self.phi**2 / 2 + self.phi**4 / 4 + grad_sq / 2
+        
+    
+class Simulation(object):
+    
+    def __init__(self, phi, l, dx, dt):
+        
+        # Define parameters
+        # Define parameters
+        self.l = l
+        self.dx = dx
+        self.dt = dt
+        self.phi = phi
+        #self.mu = np.zeros((self.l, self.l))
+        #self.calculate_mu()
+        
     def animate(self, steps):
+        
+        # Initialise the lattice using the CahnHilliard class
+        ch = CahnHilliard(self.phi, self.l, self.dx, self.dt)
         
         # Define the figure and axes for the animaΩtion
         fig, ax = plt.subplots()
         
         # Initialise the image object
-        im = ax.imshow(self.phi, cmap = "magma",
+        im = ax.imshow(ch.phi, cmap = "magma",
                        vmin = -1, vmax = 1)
         plt.colorbar(im)
         
@@ -72,12 +84,13 @@ class CahnHilliard(object):
         for s in range(steps):
             
             # Update the array
-            self.calculate_phi()
+            ch.calculate_phi()
             
+            # Update the animation every 100 steps
             if s % 100 == 0:
             
                 # Update the animation
-                im.set_data(self.phi)
+                im.set_data(ch.phi)
                 ax.set_title(f"Step: {s}")
             
                 # Keep the image up while the script is running
@@ -86,7 +99,137 @@ class CahnHilliard(object):
         # Keep the final image open when the loop finishes
         plt.show()
         
+    def measurements(self, filename, steps):
+        
+        # Define datafiles output directory
+        base_directory = os.path.dirname(os.path.abspath(__file__))
+        outputs_directory = os.path.join(base_directory, "outputs")
+        datafiles_folder = os.path.join(outputs_directory, "datafiles")
+        file_path = os.path.join(datafiles_folder, filename)
+        
+        # If the folders don't exist, create them
+        if not os.path.exists(datafiles_folder):
+            os.makedirs(datafiles_folder)
             
-cahn_hilliard = CahnHilliard(a = 0.1, phi = 0.5, l = 50, M = 0.1, 
-                             dx = 1, dt = 0.1, kappa = 0.1)
-init = cahn_hilliard.animate(steps = 100000)
+        # Make empty list to hold data points
+        free_energy_density = []
+        time = []
+        
+        # Initialise the lattice using the CahnHilliard class
+        ch = CahnHilliard(self.phi, self.l, self.dx, self.dt)
+        
+        # Iterate through simulation steps
+        for s in range(steps):
+            print(f"Simulating step = {s}/{steps}", end = '\r')
+            
+            # Update the array
+            ch.calculate_phi()
+            
+            # Take a measurement every 100 steps 
+            if s % 100 == 0:
+            
+                # Measure the free energy density
+                fed = np.mean(ch.calculate_free_energy_density())
+                
+                # Append to the list
+                free_energy_density.append(fed)
+                time.append(s)
+            
+        # Open in "a" (append) or "w" (overwrite) mode
+        # Write the values into the specified file
+        with open(file_path, "w") as f:
+            for i in range(len(time)):
+                
+                f.write(f"{free_energy_density[i]},{time[i]}\n")
+                
+    def plot_measurements(self, filename):
+        
+        # Define datafiles output directory
+        base_directory = os.path.dirname(os.path.abspath(__file__))
+        outputs_directory = os.path.join(base_directory, "outputs")
+        filename_path = os.path.join(outputs_directory, "datafiles", filename)
+        plots_folder = os.path.join(outputs_directory, "plots")
+        
+        # If the folders dont exist, create them
+        if not os.path.exists(plots_folder):
+            os.makedirs(plots_folder)
+
+        # Create an empty list to store input data
+        input_data = []        
+
+        # Read in the data from the specified text file
+        try:
+            with open(filename_path, "r") as filein:
+                for line in filein:
+                    input_data.extend(line.strip(" \n").split(","))
+                    
+        # If text file cannot be found, print error
+        except FileNotFoundError:
+            print(f"Error: Could not find {filename_path}")
+            
+        # Make empty list to store data
+        free_energy_density = []
+        time = []
+        
+        # Iterate through input data and append to empty lists
+        for i in range(0, len(input_data), 2):
+            
+            # Obtain vlaue from input data
+            fed = float(input_data[i])
+            t = float(input_data[i+1])
+            
+            # Append to lists
+            free_energy_density.append(fed)
+            time.append(t)
+        
+        # Create empty plots
+        fig, ax1 = plt.subplots(1, 1, figsize=(8, 10))
+        
+        ax1.plot(time, free_energy_density)
+        ax1.set_ylabel("Free energy density", fontsize = 14)
+        ax1.set_xlabel("Time", fontsize = 14)
+        ax1.set_title(rf"Free energy density vs time with $\phi$ = {self.phi}, dx = {self.dx}, dt = {self.dt}", fontsize = 16)
+        #ax1.set_suptitle(f"$\phi$ = {self.phi}")
+        
+        # Fix any overlapping labels, titles or tick marks
+        plt.tight_layout()
+        
+        # Save the plots to the plots folder
+        save_filename = filename.replace(".txt", "_plot.png")
+        save_path = os.path.join(plots_folder, save_filename)
+        plt.savefig(save_path, dpi = 300)
+        
+        # Print message
+        print(f"Plot successfully saved to: {save_path}")
+        
+        # Show final plots
+        plt.show()
+        
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description = "Cahn Hilliard")
+    
+    # User input parameters
+    parser.add_argument("--phi", type = float, default = 0, help = "Initial oil to water ratio")
+    parser.add_argument("--l", type = int, default = 100, help = "Lattice size (l x l)")
+    parser.add_argument("--dx", type = float, default = 1, help = "Spatial step")
+    parser.add_argument("--dt", type = float, default = 0.01, help = "Time step")
+    parser.add_argument("--mode", type = str, default = "ani", choices = ["ani", "mea"],
+                         help = "Animation or measurements")
+    parser.add_argument("--steps", type = int, default = 100000,
+                        help = "Number of simulation steps")
+    
+    args = parser.parse_args()
+    
+    # Pass in parameters to the Simulation class
+    sim = Simulation(phi = args.phi, l = args.l, dx = args.dx, dt = args.dt)
+        
+    if args.mode == "ani":
+    
+        sim.animate(steps = args.steps)
+        
+    else:
+        
+        filename = f"ch_free_energy_density_{args.steps}steps_{args.phi}phi_{args.dx}dx_{args.dt}dt_2.txt"
+        sim.measurements(filename, steps = args.steps)
+        sim.plot_measurements(filename)
+    
